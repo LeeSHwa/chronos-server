@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/chronos}
+    driver-class-name: org.postgresql.Driver
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    # 비밀번호는 파일에 두지 않는다. 이미지에 그대로 구워져 공개 저장소로 새어나가기 때문.
+    # docker-compose.yml 이 SPRING_DATASOURCE_PASSWORD 로 주입한다.
+    # IDE에서 직접 실행할 때는 실행 구성에 환경변수로 넣을 것.
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  sql:
+    init:
+      mode: always

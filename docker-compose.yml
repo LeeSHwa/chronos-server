@@ -1,0 +1,57 @@
+# 비밀번호는 같은 폴더의 .env 에서 읽는다. .env 는 git에 올라가지 않는다.
+# 처음 받았다면 .env.example 을 .env 로 복사한 뒤 값을 채울 것.
+services:
+  postgres:
+    image: postgres:16
+    container_name: chronos-postgres
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: chronos
+    ports:
+      # 127.0.0.1 로 묶어 이 머신 안에서만 접근되게 한다.
+      # "5432:5432" 로 두면 공인 IP를 가진 서버에서는 인터넷에 그대로 노출된다.
+      # IntelliJ DB 콘솔이나 psql 은 로컬에서 붙으므로 이 설정으로도 그대로 쓸 수 있다.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # server가 postgres보다 먼저 떠서 초기화에 실패하는 걸 막는다.
+      # 이게 없으면 PC 재부팅 직후 server가 몇 번 죽었다 살아난다.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chronos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  server:
+    # 이미지가 로컬에 있으면 그걸 쓰고, 없을 때만 Hub에서 받는다.
+    # ⚠️ 이 이미지는 amd64 빌드다. ARM 서버에서는 별도로 빌드해야 한다.
+    image: lshwa/chronos-server:1.1
+    container_name: chronos-server
+    ports:
+      - "8080:8080"        # 게임 로그 수집 + 어드민 API. 둘 다 이 포트로 들어온다.
+    environment:
+      # application.yml의 spring.datasource.* 를 덮어쓴다.
+      # 컨테이너 안에서 localhost는 자기 자신이므로 서비스 이름(postgres)으로 접근해야 한다.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/chronos
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    image: lshwa/chronos-web:1.0
+    container_name: chronos-web
+    ports:
+      - "8081:80"          # 어드민 대시보드. 브라우저로 http://localhost:8081
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+    # 이름을 고정한다. 지정하지 않으면 <프로젝트명>_pgdata 가 되어,
+    # 어느 디렉터리에서 compose를 띄우느냐에 따라 다른 볼륨(= 다른 데이터)을 물게 된다.
+    name: chronos-pgdata

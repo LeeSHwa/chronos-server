@@ -1,0 +1,5 @@
+# 이미지에 들어갈 필요 없는 것들 (웹으로 노출되면 안 되는 내부 문서 포함)
+Dockerfile
+.dockerignore
+CLAUDE.md
+.git

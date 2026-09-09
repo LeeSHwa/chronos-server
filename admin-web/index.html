@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CHRONOS — Admin</title>
+  <!-- 오프라인(전시장) 대응: CDN 대신 vendor/ 로컬 번들을 쓴다. 인터넷 없이도 동작. -->
+  <script src="vendor/tailwind.js"></script>
+  <script src="vendor/chart.umd.min.js"></script>
+  <script>
+    (function () {
+      const saved   = localStorage.getItem('chronos-theme');
+      const sysDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if ((saved ?? (sysDark ? 'dark' : 'light')) === 'light') {
+        document.documentElement.classList.add('light');
+      }
+    }());
+  </script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Inter"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            surface: {
+              900: 'rgb(var(--surface-900) / <alpha-value>)',
+              800: 'rgb(var(--surface-800) / <alpha-value>)',
+              700: 'rgb(var(--surface-700) / <alpha-value>)',
+              600: 'rgb(var(--surface-600) / <alpha-value>)',
+            },
+            accent: {
+              DEFAULT: 'rgb(var(--accent) / <alpha-value>)',
+              dim:     'rgb(var(--accent-dim) / <alpha-value>)',
+            },
+            muted: 'rgb(var(--muted) / <alpha-value>)',
+          },
+        },
+      },
+    }
+  </script>
+  <!--
+    구글 폰트 제거(오프라인). 인터넷이 없으면 어차피 못 받아오고, 받아오려다
+    렌더링만 수십 초 블로킹된다. 위 tailwind.config의 system-ui / monospace
+    폴백으로 대체 — Windows에선 Segoe UI / Consolas로 잡힌다.
+    전시 후 폰트를 그대로 살리고 싶으면 woff2를 vendor/에 받아 @font-face로 선언할 것.
+  -->
+  <style>
+    :root {
+      --surface-900: 13 15 20;
+      --surface-800: 19 22 30;
+      --surface-700: 26 30 41;
+      --surface-600: 34 39 55;
+      --accent:      124 110 245;
+      --accent-dim:  78 70 122;
+      --muted:       74 80 104;
+    }
+    html.light {
+      --surface-900: 241 245 249;
+      --surface-800: 255 255 255;
+      --surface-700: 226 232 240;
+      --surface-600: 203 213 225;
+      --accent:      109 95 245;
+      --accent-dim:  237 233 255;
+      --muted:       148 163 184;
+    }
+    body { background-color: rgb(var(--surface-900)); }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2a2f45; border-radius: 9999px; }
+    html.light ::-webkit-scrollbar-thumb { background: #cbd5e1; }
+
+    .nav-item.active {
+      background-color: rgb(var(--surface-700));
+      color: #c4bdff;
+      border-left-color: rgb(var(--accent));
+    }
+    .nav-item.active .nav-icon { color: rgb(var(--accent)); }
+    .nav-item:not(.active):hover {
+      background-color: rgb(var(--surface-800));
+      color: #9198b4;
+    }
+    html.light body            { color: #334155; }
+    html.light .text-white     { color: #0f172a; }
+    html.light .text-slate-200 { color: #1e293b; }
+    html.light .text-slate-300 { color: #334155; }
+    html.light .text-slate-400 { color: #475569; }
+    html.light .text-slate-500 { color: #64748b; }
+    html.light .nav-item.active            { color: rgb(var(--accent)); }
+    html.light .nav-item:not(.active):hover { color: #475569; }
+    html.light .bg-surface-800 {
+      box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+    }
+    .metric-card { border-top: 1px solid; }
+    .skeleton {
+      display: inline-block;
+      background: linear-gradient(90deg, #1a1e29 25%, #222737 50%, #1a1e29 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 4px;
+      color: transparent !important;
+      user-select: none;
+    }
+    html.light .skeleton {
+      background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+      background-size: 200% 100%;
+    }
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    /* 기간 필터 버튼 */
+    .period-btn { transition: all 0.15s; }
+    .period-btn.active {
+      background-color: rgb(var(--accent));
+      color: #fff;
+    }
+    .period-btn:not(.active) {
+      background-color: rgb(var(--surface-700));
+      color: rgb(var(--muted));
+    }
+    .period-btn:not(.active):hover { color: #9198b4; }
+    /* 이벤트 타입 배지 */
+    .badge { display: inline-block; padding: 1px 7px; border-radius: 9999px; font-size: 10px; font-weight: 600; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+  </style>
+</head>
+<body class="font-sans text-slate-300 min-h-screen flex flex-col">
+
+  <!-- ───────────── TOP BAR ───────────── -->
+  <header class="fixed top-0 left-0 right-0 z-50 h-14 flex items-center px-6
+                 border-b border-surface-700 bg-surface-900/90 backdrop-blur-sm">
+    <div class="flex items-center gap-3">
+      <svg class="w-6 h-6 text-accent flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <polyline points="12 6 12 12 16 14"/>
+      </svg>
+      <span class="text-lg font-semibold tracking-widest text-white uppercase">Chronos</span>
+      <span class="text-xs font-mono text-muted ml-1 tracking-wider">Admin</span>
+    </div>
+    <div class="ml-auto flex items-center gap-5">
+      <span id="server-version" class="text-xs font-mono text-muted skeleton">v0.0.0</span>
+      <div class="flex items-center gap-2">
+        <div id="server-status-dot" class="w-2 h-2 rounded-full bg-surface-600"></div>
+        <span id="server-status-text" class="text-xs text-slate-400">확인 중…</span>
+      </div>
+      <button onclick="toggleTheme()" title="테마 전환"
+              class="w-8 h-8 flex items-center justify-center rounded-md text-muted hover:text-slate-300 hover:bg-surface-700 transition-colors">
+        <svg id="theme-icon-sun" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+        </svg>
+        <svg id="theme-icon-moon" class="w-4 h-4 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+      <div class="w-8 h-8 rounded-full bg-accent-dim flex items-center justify-center text-xs font-semibold text-accent">A</div>
+    </div>
+  </header>
+
+  <div class="flex flex-1 pt-14">
+
+    <!-- ───────────── SIDEBAR ───────────── -->
+    <aside class="fixed top-14 left-0 bottom-0 w-56 flex flex-col
+                  border-r border-surface-700 bg-surface-900 overflow-y-auto">
+
+      <div class="px-4 pt-6 pb-2">
+        <p class="text-[10px] font-semibold tracking-[0.15em] uppercase text-muted">개요</p>
+      </div>
+      <nav class="flex flex-col gap-0.5 px-2">
+        <a href="#" data-page="dashboard"
+           class="nav-item active flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors border-l-2 border-transparent">
+          <svg class="nav-icon w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+            <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+          </svg>
+          대시보드
+        </a>
+      </nav>
+
+      <div class="px-4 pt-5 pb-2">
+        <p class="text-[10px] font-semibold tracking-[0.15em] uppercase text-muted">유저</p>
+      </div>
+      <nav class="flex flex-col gap-0.5 px-2">
+        <a href="#" data-page="user-search"
+           class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-slate-500 transition-colors border-l-2 border-transparent">
+          <svg class="nav-icon w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          유저 검색
+        </a>
+      </nav>
+
+      <div class="px-4 pt-5 pb-2">
+        <p class="text-[10px] font-semibold tracking-[0.15em] uppercase text-muted">게임 데이터</p>
+      </div>
+      <nav class="flex flex-col gap-0.5 px-2">
+        <a href="#" data-page="play-stats"
+           class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-slate-500 transition-colors border-l-2 border-transparent">
+          <svg class="nav-icon w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          플레이 통계
+        </a>
+      </nav>
+
+      <div class="px-4 pt-5 pb-2">
+        <p class="text-[10px] font-semibold tracking-[0.15em] uppercase text-muted">시스템</p>
+      </div>
+      <nav class="flex flex-col gap-0.5 px-2">
+        <a href="#" data-page="server-status"
+           class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-slate-500 transition-colors border-l-2 border-transparent">
+          <svg class="nav-icon w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+            <line x1="6" y1="6" x2="6.01" y2="6"/>
+            <line x1="6" y1="18" x2="6.01" y2="18"/>
+          </svg>
+          서버 상태
+        </a>
+      </nav>
+
+      <div class="mt-auto px-4 py-5 border-t border-surface-700">
+        <p class="text-[11px] text-muted leading-relaxed">
+          마지막 동기화<br/>
+          <span id="last-sync-time" class="font-mono text-slate-500">—</span>
+        </p>
+      </div>
+    </aside>
+
+    <!-- ───────────── MAIN CONTENT ───────────── -->
+    <main class="ml-56 flex-1 px-8 py-8 overflow-y-auto">
+
+      <!-- ════════════════════════════════
+           PAGE: 대시보드
+           ════════════════════════════════ -->
+      <div id="page-dashboard">
+        <div class="mb-6">
+          <h1 class="text-2xl font-semibold tracking-tight text-white">대시보드</h1>
+          <p class="mt-1 text-sm text-muted" id="dashboard-date">Chronos 운영 현황</p>
+        </div>
+
+        <!-- 유저 검색바 -->
+        <div class="mb-6">
+          <form id="search-form" class="flex gap-2 max-w-sm">
+            <div class="flex-1 relative">
+              <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none"
+                   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input id="search-input" type="text" placeholder="userId로 유저 검색…" autocomplete="off"
+                     class="w-full pl-9 pr-4 py-2 rounded-lg text-sm bg-surface-700 border border-surface-600
+                            text-slate-200 placeholder-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/40 transition-colors" />
+            </div>
+            <button type="submit"
+                    class="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:bg-accent/80 transition-colors">
+              조회
+            </button>
+          </form>
+        </div>
+
+        <!-- KPI 카드 3개 -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div class="metric-card border-accent/40 bg-surface-800 rounded-xl p-5">
+            <p class="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted mb-3">오늘 접속자 (DAU)</p>
+            <p id="kpi-dau" class="text-3xl font-bold text-white tracking-tight skeleton">000</p>
+            <p class="mt-2 text-xs text-slate-500">오늘 ACCOUNT_LOGIN 기준</p>
+          </div>
+          <div class="metric-card border-violet-400/30 bg-surface-800 rounded-xl p-5">
+            <p class="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted mb-3">오늘 시작된 런</p>
+            <p id="kpi-runs-started" class="text-3xl font-bold text-white tracking-tight skeleton">000</p>
+            <p class="mt-2 text-xs text-slate-500">RUN_START 이벤트 수</p>
+          </div>
+          <div class="metric-card border-emerald-400/30 bg-surface-800 rounded-xl p-5">
+            <p class="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted mb-3">오늘 완주된 런</p>
+            <p id="kpi-runs-cleared" class="text-3xl font-bold text-white tracking-tight skeleton">000</p>
+            <p class="mt-2 text-xs text-slate-500">RUN_END result=WIN</p>
+          </div>
+        </div>
+
+        <!-- DAU 차트 + 최근 유저 -->
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+
+          <!-- DAU 14일 라인 차트 -->
+          <div class="lg:col-span-3 bg-surface-800 rounded-xl border border-surface-700">
+            <div class="px-5 py-4 border-b border-surface-700 flex items-center justify-between">
+              <h2 class="text-sm font-semibold text-slate-200">DAU 추이 (최근 14일)</h2>
+            </div>
+            <div class="px-5 py-4">
+              <div class="relative" style="height: 200px;">
+                <canvas id="dau-chart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- 최근 접속 유저 10개 -->
+          <div class="lg:col-span-2 bg-surface-800 rounded-xl border border-surface-700 flex flex-col">
+            <div class="px-5 py-4 border-b border-surface-700">
+              <h2 class="text-sm font-semibold text-slate-200">최근 접속 유저</h2>
+            </div>
+            <div id="recent-users-list" class="divide-y divide-surface-700 flex-1 overflow-y-auto">
+              <div class="flex items-center gap-3 px-5 py-3.5 text-xs text-muted">
+                <svg class="w-4 h-4 animate-spin text-accent flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                </svg>
+                불러오는 중…
+              </div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /page-dashboard -->
+
+
+      <!-- ════════════════════════════════
+           PAGE: 유저 검색
+           ════════════════════════════════ -->
+      <div id="page-user-search" class="hidden">
+        <div class="mb-6">
+          <h1 class="text-2xl font-semibold tracking-tight text-white">유저 검색</h1>
+          <p class="mt-1 text-sm text-muted">userId로 유저를 검색하세요</p>
+        </div>
+
+        <form id="search-form-standalone" class="flex gap-2 max-w-sm mb-6">
+          <div class="flex-1 relative">
+            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none"
+                 viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input id="search-input-standalone" type="text" placeholder="userId 입력 (예: 25)" autocomplete="off"
+                   class="w-full pl-9 pr-4 py-2 rounded-lg text-sm bg-surface-700 border border-surface-600
+                          text-slate-200 placeholder-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/40 transition-colors" />
+          </div>
+          <button type="submit"
+                  class="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:bg-accent/80 transition-colors">
+            조회
+          </button>
+        </form>
+
+        <div id="search-results" class="bg-surface-800 rounded-xl border border-surface-700">
+          <div class="px-5 py-8 text-center text-sm text-muted">
+            userId를 입력하고 조회 버튼을 누르세요
+          </div>
+        </div>
+      </div><!-- /page-user-search -->
+
+
+      <!-- ════════════════════════════════
+           PAGE: 유저 디테일
+           ════════════════════════════════ -->
+      <div id="page-user-detail" class="hidden">
+        <div class="mb-6 flex items-center gap-3">
+          <button id="back-btn"
+                  class="flex items-center gap-1.5 text-sm text-muted hover:text-slate-300 transition-colors">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+            뒤로
+          </button>
+          <span class="text-muted">/</span>
+          <h1 class="text-2xl font-semibold tracking-tight text-white" id="user-detail-title">유저 #—</h1>
+        </div>
+
+        <!-- 요약 카드 5개 -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+          <div class="bg-surface-800 rounded-xl border border-surface-700 p-4">
+            <p class="text-[10px] font-semibold tracking-[0.12em] uppercase text-muted mb-2">총 런 수</p>
+            <p id="ud-total-runs" class="text-2xl font-bold text-white skeleton">00</p>
+          </div>
+          <div class="bg-surface-800 rounded-xl border border-surface-700 p-4">
+            <p class="text-[10px] font-semibold tracking-[0.12em] uppercase text-muted mb-2">최고 도달</p>
+            <p id="ud-max-floor" class="text-2xl font-bold text-white skeleton">0-0</p>
+          </div>
+          <div class="bg-surface-800 rounded-xl border border-surface-700 p-4">
+            <p class="text-[10px] font-semibold tracking-[0.12em] uppercase text-muted mb-2">마지막 접속</p>
+            <p id="ud-last-seen" class="text-lg font-semibold text-white skeleton">——</p>
+          </div>
+          <div class="bg-surface-800 rounded-xl border border-surface-700 p-4">
+            <p class="text-[10px] font-semibold tracking-[0.12em] uppercase text-muted mb-2">평균 런 시간</p>
+            <p id="ud-avg-run-time" class="text-2xl font-bold text-white skeleton">0m</p>
+          </div>
+          <div class="bg-surface-800 rounded-xl border border-surface-700 p-4">
+            <p class="text-[10px] font-semibold tracking-[0.12em] uppercase text-muted mb-2">완주율</p>
+            <p id="ud-win-rate" class="text-2xl font-bold text-white skeleton">0%</p>
+          </div>
+        </div>
+
+        <!-- 최근 이벤트 테이블 -->
+        <div class="bg-surface-800 rounded-xl border border-surface-700">
+          <div class="px-5 py-4 border-b border-surface-700">
+            <h2 class="text-sm font-semibold text-slate-200">최근 이벤트</h2>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="border-b border-surface-700 text-left">
+                  <th class="px-5 py-3 font-semibold text-muted tracking-wide uppercase text-[10px]">시각</th>
+                  <th class="px-4 py-3 font-semibold text-muted tracking-wide uppercase text-[10px]">이벤트</th>
+                  <th class="px-4 py-3 font-semibold text-muted tracking-wide uppercase text-[10px]">runId</th>
+                  <th class="px-4 py-3 font-semibold text-muted tracking-wide uppercase text-[10px]">층-라운드</th>
+                  <th class="px-4 py-3 font-semibold text-muted tracking-wide uppercase text-[10px]">페이로드 요약</th>
+                </tr>
+              </thead>
+              <tbody id="events-table-body" class="divide-y divide-surface-700">
+                <tr>
+                  <td colspan="5" class="px-5 py-6 text-center text-muted">
+                    <svg class="w-4 h-4 animate-spin text-accent inline-block mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                    </svg>
+                    이벤트 로딩 중…
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="events-load-more-wrap" class="px-5 py-4 border-t border-surface-700 hidden">
+            <button id="events-load-more"
+                    class="text-xs text-accent hover:text-violet-300 font-medium transition-colors">
+              더 보기 (50건)
+            </button>
+          </div>
+        </div>
+      </div><!-- /page-user-detail -->
+
+
+      <!-- ════════════════════════════════
+           PAGE: 플레이 통계
+           ════════════════════════════════ -->
+      <div id="page-play-stats" class="hidden">
+        <div class="mb-6 flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 class="text-2xl font-semibold tracking-tight text-white">플레이 통계</h1>
+            <p class="mt-1 text-sm text-muted">층별 클리어율 및 도달율 분석</p>
+          </div>
+          <!-- 기간 필터 -->
+          <div class="flex gap-1 bg-surface-700 rounded-lg p-1">
+            <button class="period-btn active px-3 py-1.5 rounded-md text-xs font-medium" data-period="today">오늘</button>
+            <button class="period-btn px-3 py-1.5 rounded-md text-xs font-medium" data-period="7d">7일</button>
+            <button class="period-btn px-3 py-1.5 rounded-md text-xs font-medium" data-period="30d">30일</button>
+          </div>
+        </div>
+
+        <!-- 메인 차트: 층별 클리어율 곡선 -->
+        <div class="bg-surface-800 rounded-xl border border-surface-700 mb-4">
+          <div class="px-5 py-4 border-b border-surface-700 flex items-center gap-5">
+            <h2 class="text-sm font-semibold text-slate-200">층별 클리어율 곡선</h2>
+            <div class="flex items-center gap-4 text-xs text-muted">
+              <span class="flex items-center gap-1.5">
+                <span class="inline-block w-6 h-0.5 rounded" style="background: rgb(124 110 245)"></span>
+                클리어율
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span class="inline-block w-6 h-0.5 rounded" style="background: rgb(52 211 153)"></span>
+                도달율
+              </span>
+            </div>
+          </div>
+          <div class="px-5 py-4">
+            <div class="relative" style="height: 280px;">
+              <canvas id="floors-chart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- 보조 테이블 -->
+        <div class="bg-surface-800 rounded-xl border border-surface-700">
+          <div class="px-5 py-4 border-b border-surface-700">
+            <h2 class="text-sm font-semibold text-slate-200">층별 통계</h2>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="border-b border-surface-700 text-left">
+                  <th class="px-5 py-3 font-semibold text-muted tracking-wide uppercase text-[10px]">층</th>
+                  <th class="px-4 py-3 font-semibold text-muted tracking-wide uppercase text-[10px] text-right">도달 런</th>
+                  <th class="px-4 py-3 font-semibold text-muted tracking-wide uppercase text-[10px] text-right">클리어 런</th>
+                  <th class="px-4 py-3 font-semibold text-muted tracking-wide uppercase text-[10px] text-right">클리어율</th>
+                  <th class="px-4 py-3 font-semibold text-muted tracking-wide uppercase text-[10px] text-right">평균 클리어시간</th>
+                  <th class="px-4 py-3 font-semibold text-muted tracking-wide uppercase text-[10px] text-right">평균 사망</th>
+                </tr>
+              </thead>
+              <tbody id="floors-table-body" class="divide-y divide-surface-700">
+                <tr>
+                  <td colspan="6" class="px-5 py-6 text-center text-muted">
+                    <svg class="w-4 h-4 animate-spin text-accent inline-block mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                    </svg>
+                    로딩 중…
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div><!-- /page-play-stats -->
+
+
+      <!-- ════════════════════════════════
+           PAGE: 서버 상태
+           ════════════════════════════════ -->
+      <div id="page-server-status" class="hidden">
+        <div class="mb-6">
+          <h1 class="text-2xl font-semibold tracking-tight text-white">서버 상태</h1>
+          <p class="mt-1 text-sm text-muted">백엔드 서버 헬스체크 결과</p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <!-- 상태 카드 -->
+          <div class="sm:col-span-1 bg-surface-800 rounded-xl border border-surface-700 p-6 flex flex-col items-center justify-center gap-3">
+            <div id="ss-dot-large" class="w-5 h-5 rounded-full bg-surface-600"></div>
+            <p id="ss-status-label" class="text-lg font-bold text-white skeleton">CHECKING</p>
+            <p class="text-xs text-muted text-center">서버 헬스 상태</p>
+          </div>
+          <!-- 버전 -->
+          <div class="bg-surface-800 rounded-xl border border-surface-700 p-6">
+            <p class="text-[10px] font-semibold tracking-[0.12em] uppercase text-muted mb-2">버전</p>
+            <p id="ss-version" class="text-2xl font-bold font-mono text-white skeleton">v0.0.0</p>
+          </div>
+          <!-- 마지막 동기화 -->
+          <div class="bg-surface-800 rounded-xl border border-surface-700 p-6">
+            <p class="text-[10px] font-semibold tracking-[0.12em] uppercase text-muted mb-2">마지막 동기화</p>
+            <p id="ss-last-sync" class="text-lg font-semibold text-white skeleton">——</p>
+          </div>
+        </div>
+
+        <div class="bg-surface-800 rounded-xl border border-surface-700 p-5">
+          <h2 class="text-sm font-semibold text-slate-200 mb-3">상태 코드 설명</h2>
+          <div class="flex flex-col gap-2 text-xs">
+            <div class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></span>
+              <span class="text-slate-400"><strong class="text-slate-200">HEALTHY</strong> — 모든 서비스 정상 동작</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"></span>
+              <span class="text-slate-400"><strong class="text-slate-200">DEGRADED</strong> — 일부 서비스 응답 지연 또는 오류</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-full bg-rose-500 flex-shrink-0"></span>
+              <span class="text-slate-400"><strong class="text-slate-200">DOWN</strong> — 서버 응답 없음</span>
+            </div>
+          </div>
+        </div>
+      </div><!-- /page-server-status -->
+
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

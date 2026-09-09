@@ -1,0 +1,73 @@
+### 1. 최소 요청 — RUN_START 한 건
+POST http://localhost:8080/api/v1/logs
+Content-Type: application/json
+
+[
+  {
+    "userId": -6601403713907716966,
+    "eventType": "RUN_START",
+    "timestamp": "2026-08-05T13:24:05.123Z",
+    "difficulty": "Limited",
+    "runId": -8553994346255530530,
+    "floor": 1,
+    "round": 1,
+    "payload": { "characterClass": "WARRIOR" }
+  }
+]
+
+
+### 2. runId/floor/round 없는 이벤트 (nullable 컬럼 확인)
+POST http://localhost:8080/api/v1/logs
+Content-Type: application/json
+
+[
+  {
+    "userId": -6601403713907716966,
+    "eventType": "ACCOUNT_LOGIN",
+    "timestamp": "2026-08-05T13:20:00.000Z",
+    "difficulty": "Standard",
+    "payload": {
+      "platform": "PC",
+      "clientVersion": "1.2.3",
+      "region": "KR"
+    }
+  }
+]
+
+
+### 3. 배열로 여러 건 (클라가 실제로 보내는 배치 형태)
+POST http://localhost:8080/api/v1/logs
+Content-Type: application/json
+
+[
+  {
+    "userId": -6601403713907716966,
+    "eventType": "FLOOR_ENTER",
+    "timestamp": "2026-08-05T13:24:06.000Z",
+    "difficulty": "Limited",
+    "runId": -8553994346255530530,
+    "floor": 1,
+    "round": 1,
+    "payload": {}
+  },
+  {
+    "userId": -6601403713907716966,
+    "eventType": "PLAYER_DEATH",
+    "timestamp": "2026-08-05T13:28:47.500Z",
+    "difficulty": "Limited",
+    "runId": -8553994346255530530,
+    "floor": 2,
+    "round": 3,
+    "payload": { "survivalTimeMs": 282377, "killerId": null }
+  },
+  {
+    "userId": -6601403713907716966,
+    "eventType": "RUN_END",
+    "timestamp": "2026-08-05T13:28:47.600Z",
+    "difficulty": "Limited",
+    "runId": -8553994346255530530,
+    "floor": 2,
+    "round": 3,
+    "payload": { "totalTimeMs": 282377, "result": "LOSE" }
+  }
+]
