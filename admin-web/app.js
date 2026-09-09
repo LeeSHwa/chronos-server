@@ -6,7 +6,18 @@
  * USE_MOCK = false → 실제 API 호출 (백엔드 구현 후 전환)
  */
 
-const BASE_URL  = 'http://localhost:8080';
+/**
+ * 이 페이지를 내려준 호스트의 8080 포트를 가리킨다.
+ *
+ * 주소를 하드코딩하지 않는 이유:
+ *   로컬에서 열면  http://localhost:8080
+ *   서버에서 열면  http://<서버 공인 IP>:8080
+ * 로 자동으로 맞춰지므로, 배포 환경마다 파일을 고칠 필요가 없다.
+ *
+ * 'localhost:8080' 으로 박아두면 서버에 올렸을 때 브라우저가
+ * "접속한 사람의 PC"를 찾게 되어 데이터를 못 불러온다.
+ */
+const BASE_URL  = `${location.protocol}//${location.hostname}:8080`;
 const USE_MOCK  = false;
 
 // ─────────────────────────────────────────────
