@@ -1,15 +1,17 @@
 # Chronos 서버 실행 가이드
 
-Docker 이미지만으로 게임 로그 서버 + DB + 어드민 대시보드를 띄운다.
-소스 코드나 빌드 도구는 필요 없다.
+저장소를 clone 하면 게임 로그 서버 + DB + 어드민 대시보드가 한 번에 뜬다.
+JDK 나 Gradle 을 설치할 필요는 없다. 빌드가 컨테이너 안에서 일어난다.
 
 | 구성 | 이미지 | 포트 |
 |---|---|---|
-| 로그 수집 + 어드민 API | `lshwa/chronos-server:1.1` | 8080 |
-| 어드민 대시보드 | `lshwa/chronos-web:1.0` | 8081 |
-| DB | `postgres:16` | 5432 |
+| 로그 수집 + 어드민 API | `chronos-server:local` (직접 빌드) | 8080 |
+| 어드민 대시보드 | `chronos-web:local` (직접 빌드) | 8081 (기본값) |
+| DB | `postgres:16` (공식 이미지) | 5432 |
 
-세 이미지 모두 공개되어 있어 `docker compose up -d` 하면 자동으로 받아진다.
+직접 빌드하는 이유는 **CPU 아키텍처** 때문이다. amd64 PC에서 만든 이미지는
+ARM 서버에서 돌지 않는다. 빌드하는 머신에 맞춰 자동으로 생성되게 하면
+같은 명령으로 어느 환경에서든 동작한다.
 
 ---
 
@@ -38,21 +40,42 @@ docker volume rm chronos-pgdata
 
 ---
 
-## 2. 파일 준비
+## 2. 저장소 받기
 
-`docker-compose.yml` 파일을 받아서 아무 폴더에나 둔다. 이 파일 하나면 된다.
+```bash
+git clone https://github.com/LeeSHwa/chronos-server.git && cd chronos-server
+```
 
-이후 모든 명령은 **그 파일이 있는 폴더에서** 실행한다.
+이후 모든 명령은 **이 폴더 안에서** 실행한다.
+
+## 2-1. `.env` 만들기
+
+`.env` 는 비밀번호가 들어 있어 저장소에 포함되지 않는다. **직접 만들어야 한다.**
+이게 없으면 compose 가 변수를 못 찾아 기동에 실패한다.
+
+```bash
+cp .env.example .env
+```
+
+비밀번호를 생성해서 채운다.
+
+```bash
+openssl rand -base64 24
+```
 
 ---
 
-## 3. 실행
+## 3. 빌드 & 실행
+
+```bash
+docker compose build
+```
+
+처음에는 의존성을 받느라 몇 분 걸린다. 두 번째부터는 캐시가 재사용되어 훨씬 빠르다.
 
 ```bash
 docker compose up -d
 ```
-
-처음 실행하면 이미지를 받느라 몇 분 걸린다(약 1.3GB). 두 번째부터는 몇 초다.
 
 ---
 
@@ -172,7 +195,7 @@ docker compose exec postgres psql -U postgres -d chronos -c "TRUNCATE game_event
 **인터넷 되는 PC에서 저장**
 
 ```bash
-docker save lshwa/chronos-server:1.1 lshwa/chronos-web:1.0 postgres:16 -o chronos-images.tar
+docker save chronos-server:local chronos-web:local postgres:16 -o chronos-images.tar
 ```
 
 **대상 PC에서 불러오기**

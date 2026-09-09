@@ -1,0 +1,12 @@
+# 빌드 컨텍스트에서 제외. 이미지 안에서 새로 빌드하므로
+# 로컬 빌드 산출물이 섞여 들어가면 안 된다.
+build/
+out/
+.gradle/
+bin/
+
+# IDE / 문서
+.idea/
+*.iml
+HELP.md
+test.http

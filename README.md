@@ -34,10 +34,20 @@
 ## 실행
 
 ```bash
-docker compose up -d
+cp .env.example .env
+```
+
+`POSTGRES_PASSWORD` 를 채운 뒤:
+
+```bash
+docker compose build && docker compose up -d
 ```
 
 브라우저에서 http://localhost:8081
+
+> 이미지는 Hub에서 받지 않고 **직접 빌드한다.** amd64 PC에서 만든 이미지는
+> ARM 서버에서 동작하지 않기 때문에, 빌드하는 머신에 맞춰 생성되게 했다.
+> JDK 나 Gradle 은 설치할 필요 없다 — 빌드가 컨테이너 안에서 일어난다.
 
 자세한 절차와 문제 해결은 [docs/getting-started.md](docs/getting-started.md) 참고.
 
