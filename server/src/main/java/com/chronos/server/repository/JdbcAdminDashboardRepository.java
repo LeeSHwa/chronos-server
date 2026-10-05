@@ -53,8 +53,13 @@ public class JdbcAdminDashboardRepository implements AdminDashboardRepository {
      */
     private static final String ROUND_ORDER =
             "(CASE WHEN round ~ '^[0-9]+$' THEN round::int END) NULLS LAST, round";
+    /**
+     * 내림차순에서는 NULLS FIRST 여야 한다.
+     * 보스 라운드 "B"는 숫자가 아니라 CASE 결과가 NULL인데, 진행 순서로는 그 층의 마지막이다.
+     * NULLS LAST로 두면 가장 깊이 간 지점을 찾을 때 보스가 꼴찌로 밀려 1-4가 최고 도달로 잡힌다.
+     */
     private static final String ROUND_ORDER_DESC =
-            "(CASE WHEN round ~ '^[0-9]+$' THEN round::int END) DESC NULLS LAST, round DESC";
+            "(CASE WHEN round ~ '^[0-9]+$' THEN round::int END) DESC NULLS FIRST, round DESC";
 
     /** payload 값이 정수 문자열일 때만 집계에 넣는다. 이상한 값 하나로 500이 나는 걸 막는다. */
     private static final String NUMERIC_GUARD = " ~ '^[0-9]+$'";
@@ -266,43 +271,70 @@ public class JdbcAdminDashboardRepository implements AdminDashboardRepository {
     }
 
     /**
-     * 층별 집계 SQL.
+     * 층별 집계 SQL. (로그 명세 v0.4 기준)
+     *
+     * 한 줄이 "어떤 런이 어떤 스테이지를 한 번 지나간 것"이 되도록 먼저 stage CTE로 접은 뒤 집계한다.
+     * 이벤트를 그대로 세지 않는 이유는 이어하기 때문이다. 판 도중 게임을 끄면 같은 스테이지를
+     * 다시 클리어하므로 ROUND_CLEAR가 두 번 나간다(명세 4.5). 이벤트를 세면 클리어 수가
+     * 도달 수보다 많아져 클리어율이 100%를 넘는다.
+     *
+     * 스테이지 소요 시간은 ROUND_CLEAR의 clearElapsedMs에서 같은 스테이지 ROUND_ENTER의
+     * elapsedMs를 뺀 값이다. ROUND_CLEAR 자체는 리워드·정비가 끝난 Save 시점에 나가지만
+     * clearElapsedMs는 클리어한 순간의 스냅샷이라(명세 3.3), 리워드·정비 시간이 섞이지 않는다.
      *
      * @param byDifficulty true면 난이도를 그룹 키에 추가한다.
      */
     private String floorRowsQuery(boolean byDifficulty) {
-        String difficultySelect = byDifficulty ? "upper(difficulty) AS diff," : "CAST(NULL AS TEXT) AS diff,";
-        String difficultyGroup = byDifficulty ? "upper(difficulty), " : "";
+        String difficultySelect = byDifficulty ? "diff," : "CAST(NULL AS TEXT) AS diff,";
+        String difficultyGroup = byDifficulty ? "diff, " : "";
         String difficultyFilter = byDifficulty ? "AND difficulty IS NOT NULL" : "";
 
         return """
-                SELECT %s
+                WITH stage AS (
+                    SELECT run_id,
+                           floor,
+                           round,
+                           upper(difficulty) AS diff,
+                           COUNT(*) FILTER (WHERE event_type = 'ROUND_ENTER')  AS enters,
+                           COUNT(*) FILTER (WHERE event_type = 'ROUND_CLEAR')  AS clears,
+                           COUNT(*) FILTER (WHERE event_type = 'PLAYER_DEATH') AS deaths,
+                           MIN((payload ->> 'elapsedMs')::bigint) FILTER (
+                               WHERE event_type = 'ROUND_ENTER' AND payload ->> 'elapsedMs'%1$s
+                           ) AS enter_ms,
+                           MAX((payload ->> 'clearElapsedMs')::bigint) FILTER (
+                               WHERE event_type = 'ROUND_CLEAR' AND payload ->> 'clearElapsedMs'%1$s
+                           ) AS clear_ms,
+                           MIN((payload ->> 'overclockDeciseconds')::int) FILTER (
+                               WHERE event_type = 'ROUND_ENTER' AND payload ->> 'overclockDeciseconds'%1$s
+                           ) AS enter_oc
+                    FROM game_events
+                    WHERE event_type IN ('ROUND_ENTER', 'ROUND_CLEAR', 'PLAYER_DEATH')
+                      AND run_id IS NOT NULL
+                      AND floor   IS NOT NULL
+                      AND round   IS NOT NULL
+                      AND server_time >= ?
+                      AND server_time <  ?
+                      %2$s
+                    GROUP BY run_id, floor, round, upper(difficulty)
+                )
+                SELECT %3$s
                        floor,
                        round,
-                       COUNT(*) FILTER (WHERE event_type = 'FLOOR_ENTER') AS entered,
-                       COUNT(*) FILTER (WHERE event_type = 'FLOOR_CLEAR') AS cleared,
-                       AVG((payload ->> 'clearTimeMs')::numeric) FILTER (
-                           WHERE event_type = 'FLOOR_CLEAR' AND payload ->> 'clearTimeMs'%s
+                       COUNT(*) FILTER (WHERE enters > 0) AS entered,
+                       COUNT(*) FILTER (WHERE clears > 0) AS cleared,
+                       SUM(deaths)                        AS deaths,
+                       AVG(clear_ms - enter_ms) FILTER (
+                           WHERE clear_ms IS NOT NULL AND enter_ms IS NOT NULL AND clear_ms >= enter_ms
                        ) AS avg_clear_ms,
-                       AVG((payload ->> 'deathsInFloor')::numeric) FILTER (
-                           WHERE event_type = 'FLOOR_CLEAR' AND payload ->> 'deathsInFloor'%s
-                       ) AS avg_deaths
-                FROM game_events
-                WHERE floor IS NOT NULL
-                  AND round IS NOT NULL
-                  AND event_type IN ('FLOOR_ENTER', 'FLOOR_CLEAR')
-                  AND server_time >= ?
-                  AND server_time <  ?
-                  %s
-                GROUP BY %sfloor, round
-                ORDER BY %sfloor, %s
+                       AVG(enter_oc) AS avg_enter_oc
+                FROM stage
+                GROUP BY %4$sfloor, round
+                ORDER BY %4$sfloor, %5$s
                 """.formatted(
-                difficultySelect,
-                NUMERIC_GUARD,
                 NUMERIC_GUARD,
                 difficultyFilter,
+                difficultySelect,
                 difficultyGroup,
-                byDifficulty ? "diff, " : "",
                 ROUND_ORDER
         );
     }
@@ -325,7 +357,8 @@ public class JdbcAdminDashboardRepository implements AdminDashboardRepository {
                     cleared,
                     clearRate,
                     avgClearMs == null ? null : Math.round(avgClearMs),
-                    numeric(rs, "avg_deaths")
+                    rs.getLong("deaths"),
+                    numeric(rs, "avg_enter_oc")
             );
         };
     }
@@ -395,8 +428,9 @@ public class JdbcAdminDashboardRepository implements AdminDashboardRepository {
     /**
      * 최고 도달 지점.
      *
-     * ⚠️ FLOOR_ENTER의 round는 물리 라운드(셔플된 씬 번호)라 진행도로 쓰면 틀린다(client-log-spec 3장 ①).
-     * 논리 라운드를 싣는 이벤트만 대상으로 한다.
+     * 로그 명세 v0.4부터 모든 이벤트의 round가 "플레이어가 지나간 순서"로 통일됐다(명세 1.5).
+     * 섞인 맵 번호가 섞여 들어오던 문제가 사라져서, 스테이지 단위 이벤트를 그대로 쓸 수 있다.
+     * 진입만 하고 못 깬 스테이지도 도달로 치므로 ROUND_ENTER를 포함한다.
      */
     private UserSummaryDto.MaxFloor findMaxFloor(long userId) {
         String q = """
@@ -405,7 +439,7 @@ public class JdbcAdminDashboardRepository implements AdminDashboardRepository {
                 WHERE user_id = ?
                   AND floor IS NOT NULL
                   AND round IS NOT NULL
-                  AND event_type IN ('FLOOR_CLEAR', 'PLAYER_DEATH', 'BOSS_KILL', 'RUN_END')
+                  AND event_type IN ('ROUND_ENTER', 'ROUND_CLEAR', 'PLAYER_DEATH', 'RUN_END')
                 ORDER BY floor DESC, %s
                 LIMIT 1
                 """.formatted(ROUND_ORDER_DESC);
@@ -424,24 +458,26 @@ public class JdbcAdminDashboardRepository implements AdminDashboardRepository {
     /**
      * 평균 런 시간.
      *
-     * RUN_END payload의 totalTimeMs는 클라에서 채워지는지 확인되지 않았고 0으로 오는 정황이 있어
-     * (client-log-spec 1장 ⑤), 런 단위 첫 이벤트~마지막 이벤트 간격으로 서버가 직접 계산한다.
-     * 중도 이탈한 런은 마지막 이벤트까지만 반영되므로 실제보다 짧게 잡힌다.
+     * 로그 명세 v0.4의 RUN_END.elapsedMs는 "그 판에서 실제로 플레이한 누적 시간"이라
+     * 그대로 평균 내면 된다. 시계가 아니라 플레이 시간이므로 이어하기로 며칠에 걸쳐 끝낸 판도
+     * 정상적인 값이 나온다. (예전에는 믿을 값이 없어 첫~마지막 이벤트 간격으로 추정했는데,
+     * 그 방식은 중간에 게임을 끄고 다음 날 이어한 판을 수십 시간짜리로 잡았다.)
+     *
+     * RUN_END 없이 끊긴 판(게임을 그냥 끔)은 평균에서 빠진다. 끝나지 않은 판이라 당연하다.
      */
     private Long findAvgRunTimeMs(long userId) {
         String q = """
-                SELECT AVG(span_ms)
+                SELECT AVG(elapsed_ms)::float8
                 FROM (
-                    SELECT EXTRACT(EPOCH FROM (
-                               MAX(COALESCE(client_time, server_time)) -
-                               MIN(COALESCE(client_time, server_time))
-                           )) * 1000 AS span_ms
+                    SELECT MAX((payload ->> 'elapsedMs')::bigint) AS elapsed_ms
                     FROM game_events
                     WHERE user_id = ?
+                      AND event_type = 'RUN_END'
                       AND run_id IS NOT NULL
+                      AND payload ->> 'elapsedMs'%s
                     GROUP BY run_id
                 ) t
-                """;
+                """.formatted(NUMERIC_GUARD);
         Double avg = jdbc.queryForObject(q, Double.class, userId);
         return avg == null ? null : Math.round(avg);
     }

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>서버 상태 — CHRONOS Admin</title>
+  <script src="vendor/tailwind.js"></script>
+  <script src="assets/boot.js"></script>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="status" class="font-sans text-slate-300 min-h-screen">
+
+<main class="app-main">
+
+  <div class="mb-6 flex items-end justify-between gap-4 flex-wrap">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight text-white">서버 상태</h1>
+      <p class="mt-1 text-sm text-muted">서버가 살아있는지, 로그가 실제로 쌓이고 있는지</p>
+    </div>
+    <button type="button" id="refresh-btn" class="seg-btn flex items-center gap-2" style="background: rgb(var(--surface-700))">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+      </svg>
+      새로고침
+    </button>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+
+    <!-- 서버 상태 -->
+    <div class="card p-6 flex flex-col items-center justify-center gap-3 text-center">
+      <div id="ss-dot" class="w-5 h-5 rounded-full bg-surface-600"></div>
+      <p id="ss-status" class="text-xl font-bold text-white skeleton">CHECKING</p>
+      <p class="text-xs text-muted">DB까지 정상적으로 닿는지 여부</p>
+      <p id="ss-version" class="text-xs font-mono text-muted skeleton">v0.0.0</p>
+    </div>
+
+    <!--
+      수집 상태. 서버가 살아있어도 로그가 안 들어올 수 있으므로 이쪽이 실제로 더 중요하다.
+      마지막 이벤트가 언제 들어왔는지가 한눈에 보여야 한다.
+    -->
+    <div class="card lg:col-span-2">
+      <div class="card-head">
+        <h2 class="card-title text-slate-200">로그 수집</h2>
+        <span class="text-[11px] text-muted" id="auto-refresh-note">30초마다 자동 갱신</span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-surface-700">
+        <div class="p-5">
+          <p class="kpi-label">마지막 이벤트</p>
+          <p id="ss-last-event" class="text-xl font-bold text-white skeleton">——</p>
+          <p id="ss-last-event-abs" class="mt-1 text-[11px] text-muted font-mono">—</p>
+        </div>
+        <div class="p-5">
+          <p class="kpi-label">오늘 이벤트</p>
+          <p id="ss-events-today" class="text-xl font-bold text-white skeleton" style="font-variant-numeric: tabular-nums">0</p>
+          <p class="mt-1 text-[11px] text-muted">자정 이후 수신</p>
+        </div>
+        <div class="p-5">
+          <p class="kpi-label">누적 이벤트</p>
+          <p id="ss-events-total" class="text-xl font-bold text-white skeleton" style="font-variant-numeric: tabular-nums">0</p>
+          <p class="mt-1 text-[11px] text-muted">DB 전체</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+    <div class="card p-5">
+      <h2 class="card-title text-slate-200 mb-3">상태 코드</h2>
+      <div class="flex flex-col gap-2.5 text-xs">
+        <div class="flex items-start gap-3">
+          <span class="w-2 h-2 mt-1.5 rounded-full bg-emerald-500 flex-shrink-0"></span>
+          <span class="text-slate-400"><strong class="text-slate-200">HEALTHY</strong> — DB 조회까지 정상</span>
+        </div>
+        <div class="flex items-start gap-3">
+          <span class="w-2 h-2 mt-1.5 rounded-full bg-rose-500 flex-shrink-0"></span>
+          <span class="text-slate-400"><strong class="text-slate-200">DOWN</strong> — DB에 닿지 못함. 서버는 떠 있어도 이 상태일 수 있음</span>
+        </div>
+        <div class="flex items-start gap-3">
+          <span class="w-2 h-2 mt-1.5 rounded-full bg-amber-400 flex-shrink-0"></span>
+          <span class="text-slate-400"><strong class="text-slate-200">연결 실패</strong> — 이 페이지가 서버에 닿지 못함(서버 꺼짐 / 주소·포트 문제)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- "조용한 것"과 "끊긴 것"을 서버가 구분할 수 없다는 점을 화면에도 남긴다 -->
+    <div class="card p-5">
+      <h2 class="card-title text-slate-200 mb-3">읽는 법</h2>
+      <p class="text-xs text-slate-400 leading-relaxed">
+        상태가 <strong class="text-slate-200">HEALTHY</strong>인데 마지막 이벤트가 몇 시간 전이라면,
+        서버는 멀쩡하고 <strong class="text-slate-200">보내는 쪽이 조용한 것</strong>입니다.
+        아무도 게임을 안 했을 때와 수집이 끊겼을 때를 서버는 구분할 수 없으므로,
+        그 판단은 사람이 합니다. 플레이 중인 게 확실한데 마지막 이벤트가 갱신되지 않으면
+        클라이언트 전송(배치 주기 15초)이나 네트워크를 확인하세요.
+      </p>
+      <p class="mt-3 text-xs text-muted">
+        API 주소 <span id="ss-base-url" class="font-mono"></span>
+      </p>
+    </div>
+  </div>
+
+</main>
+
+<script src="assets/format.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/shell.js"></script>
+<script src="assets/page-status.js"></script>
+</body>
+</html>

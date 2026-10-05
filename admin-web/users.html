@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>유저 검색 — CHRONOS Admin</title>
+  <script src="vendor/tailwind.js"></script>
+  <script src="assets/boot.js"></script>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="users" class="font-sans text-slate-300 min-h-screen">
+
+<main class="app-main">
+
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight text-white">유저 검색</h1>
+    <p class="mt-1 text-sm text-muted">userId 앞자리를 입력하면 해당하는 유저가 모두 나옵니다</p>
+  </div>
+
+  <!--
+    GET 폼이라 검색하면 주소가 users.html?q=379 로 바뀐다.
+    그래서 검색 결과를 북마크할 수 있고, 유저 상세를 보다 뒤로 오면 검색어가 그대로 남는다.
+  -->
+  <form action="users.html" method="get" class="flex gap-2 max-w-md mb-6">
+    <div class="relative flex-1">
+      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none"
+           viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <input id="search-input" type="text" name="q" class="input" placeholder="예: 3793 또는 전체 ID" autocomplete="off" autofocus />
+    </div>
+    <button type="submit" class="btn-primary flex-shrink-0">조회</button>
+  </form>
+
+  <div class="card">
+    <div id="search-results">
+      <div class="empty">
+        검색어를 입력하세요.
+        <p class="mt-1 text-xs opacity-70">userId는 64비트 값이라 19~20자리입니다. 앞 몇 자리만 입력해도 됩니다.</p>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script src="assets/format.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/shell.js"></script>
+<script src="assets/page-users.js"></script>
+</body>
+</html>
