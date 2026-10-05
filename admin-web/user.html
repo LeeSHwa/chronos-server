@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>유저 상세 — CHRONOS Admin</title>
+  <script src="vendor/tailwind.js"></script>
+  <script src="assets/boot.js"></script>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="user" class="font-sans text-slate-300 min-h-screen">
+
+<main class="app-main">
+
+  <!-- 뒤로가기는 브라우저 히스토리를 쓴다. 검색 결과에서 왔으면 검색어까지 그대로 살아난다. -->
+  <div class="mb-5">
+    <button type="button" id="back-btn" class="flex items-center gap-1.5 text-sm text-muted hover:text-slate-300 transition-colors">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+      뒤로
+    </button>
+  </div>
+
+  <!-- 유저 머리말: 여기서만 전체 ID를 온전히 보여준다 -->
+  <div class="card p-5 mb-4 flex items-center gap-4 flex-wrap">
+    <div id="user-avatar"></div>
+    <div class="min-w-0">
+      <p class="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted mb-1">userId</p>
+      <div id="user-id-full" class="flex items-center gap-2 text-white">
+        <span class="uid-full skeleton">0000000000000000000</span>
+      </div>
+    </div>
+    <div class="ml-auto text-right">
+      <p class="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted mb-1">마지막 접속</p>
+      <p id="ud-last-seen" class="text-sm font-medium text-slate-200 skeleton">——</p>
+    </div>
+  </div>
+
+  <!-- ───────── 요약 ───────── -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+    <div class="card p-4">
+      <p class="kpi-label">총 런 수</p>
+      <p id="ud-total-runs" class="text-2xl font-bold text-white skeleton" style="font-variant-numeric: tabular-nums">00</p>
+    </div>
+    <div class="card p-4">
+      <p class="kpi-label">최고 도달</p>
+      <p id="ud-max-floor" class="text-2xl font-bold text-white skeleton">0-0</p>
+    </div>
+    <div class="card p-4">
+      <p class="kpi-label">평균 런 시간</p>
+      <p id="ud-avg-run-time" class="text-2xl font-bold text-white skeleton">0m</p>
+    </div>
+    <div class="card p-4">
+      <p class="kpi-label">완주율</p>
+      <p id="ud-win-rate" class="text-2xl font-bold text-white skeleton">0%</p>
+    </div>
+  </div>
+
+  <!-- ───────── 이벤트 ───────── -->
+  <div class="card">
+    <div class="card-head">
+      <h2 class="card-title text-slate-200">이벤트 기록</h2>
+      <span class="text-[11px] text-muted">최신순 · 시각은 서버 수신 기준</span>
+    </div>
+    <div class="tbl-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>시각</th>
+            <th>이벤트</th>
+            <th>난이도</th>
+            <th>층-라운드</th>
+            <th>runId</th>
+            <th>내용</th>
+          </tr>
+        </thead>
+        <tbody id="events-table-body"></tbody>
+      </table>
+    </div>
+    <div id="events-load-more-wrap" class="px-5 py-4 border-t border-surface-700 hidden">
+      <button type="button" id="events-load-more" class="text-xs font-medium hover:underline" style="color: rgb(var(--accent))">
+        더 보기 (50건)
+      </button>
+    </div>
+  </div>
+
+</main>
+
+<script src="assets/format.js"></script>
+<script src="assets/catalog.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/shell.js"></script>
+<script src="assets/page-user.js"></script>
+</body>
+</html>

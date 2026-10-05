@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>플레이 통계 — CHRONOS Admin</title>
+  <script src="vendor/tailwind.js"></script>
+  <script src="assets/boot.js"></script>
+  <script src="vendor/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="stats" class="font-sans text-slate-300 min-h-screen">
+
+<main class="app-main">
+
+  <div class="mb-6 flex items-end justify-between gap-4 flex-wrap">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight text-white">플레이 통계</h1>
+      <p class="mt-1 text-sm text-muted" id="stats-range">층별 도달율과 클리어율</p>
+    </div>
+    <!--
+      기간은 링크다(?period=7d). 서버에서 다른 데이터를 받아오는 전환이라
+      주소에 남겨야 뒤로가기로 이전 기간에 돌아올 수 있다.
+    -->
+    <div class="seg" id="period-seg">
+      <a href="stats.html?period=today" class="seg-btn" data-period="today">오늘</a>
+      <a href="stats.html?period=7d"    class="seg-btn" data-period="7d">7일</a>
+      <a href="stats.html?period=30d"   class="seg-btn" data-period="30d">30일</a>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+    <div class="card kpi" style="border-top-color: rgb(var(--accent))">
+      <p class="kpi-label">기간 내 런</p>
+      <p id="kpi-total-runs" class="kpi-value text-white skeleton">000</p>
+      <p class="kpi-sub" id="kpi-total-runs-sub">RUN_START 기준</p>
+    </div>
+    <div class="card kpi" style="border-top-color: rgb(52 211 153)">
+      <p class="kpi-label">최고 도달 층</p>
+      <p id="kpi-deepest" class="kpi-value text-white skeleton">0-0</p>
+      <p class="kpi-sub">한 번이라도 진입한 가장 깊은 곳</p>
+    </div>
+    <div class="card kpi" style="border-top-color: rgb(251 191 36)">
+      <p class="kpi-label">가장 많이 막히는 곳</p>
+      <p id="kpi-wall" class="kpi-value text-white skeleton">0-0</p>
+      <p class="kpi-sub" id="kpi-wall-sub">클리어율이 가장 낮은 구간</p>
+    </div>
+    <div class="card kpi" style="border-top-color: rgb(56 189 248)">
+      <p class="kpi-label">평균 클리어 시간</p>
+      <p id="kpi-avg-clear" class="kpi-value text-white skeleton">0m</p>
+      <p class="kpi-sub">스테이지 소요 시간 평균</p>
+    </div>
+  </div>
+
+  <!-- ───────── 곡선 ───────── -->
+  <div class="card mb-4">
+    <div class="card-head">
+      <h2 class="card-title text-slate-200">층별 도달·클리어 곡선</h2>
+      <div class="flex items-center gap-4 flex-wrap">
+        <div class="flex items-center gap-4 text-[11px] text-muted">
+          <span class="flex items-center gap-1.5"><span class="inline-block w-5 h-0.5 rounded" style="background: rgb(124 110 245)"></span>클리어율</span>
+          <span class="flex items-center gap-1.5"><span class="inline-block w-5 h-0.5 rounded" style="background: rgb(52 211 153)"></span>도달율</span>
+        </div>
+        <!-- 난이도 탭: 한 응답에 전부 들어있어 화면에서만 갈아끼운다 -->
+        <div class="seg" id="difficulty-seg"></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="relative" style="height: 280px;">
+        <canvas id="floors-chart"></canvas>
+      </div>
+      <div id="floors-chart-empty" class="hidden"></div>
+    </div>
+  </div>
+
+  <!-- ───────── 표 ───────── -->
+  <div class="card">
+    <div class="card-head">
+      <h2 class="card-title text-slate-200">층별 상세</h2>
+    </div>
+    <div class="tbl-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>층-라운드</th>
+            <th class="num">도달</th>
+            <th class="num">클리어</th>
+            <th class="num">클리어율</th>
+            <th class="num">사망</th>
+            <th class="num">평균 소요</th>
+            <th class="num">평균 진입 OC</th>
+          </tr>
+        </thead>
+        <tbody id="floors-table-body"></tbody>
+      </table>
+    </div>
+    <!--
+      round 의미가 이벤트마다 달라서 생기는 착시를 표 밑에 적어둔다.
+      화면만 보고 "2-3이 이상하다"고 판단하면 틀린 결론에 도달한다.
+    -->
+    <div class="px-5 py-3 border-t border-surface-700 text-[11px] text-muted leading-relaxed">
+도달은 ROUND_ENTER, 클리어는 ROUND_CLEAR 기준이며 런 단위로 셉니다.
+      이어하기로 같은 스테이지를 두 번 깬 판도 한 번으로 셉니다.
+      평균 소요는 그 스테이지의 ROUND_CLEAR와 ROUND_ENTER의 elapsedMs 차이라 리워드·정비 시간이 섞이지 않습니다.
+      평균 진입 OC가 낮은 구간은 들어갈 때 이미 여유가 없다는 뜻이라, 클리어율과 같이 보세요.
+    </div>
+  </div>
+
+</main>
+
+<script src="assets/format.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/charts.js"></script>
+<script src="assets/shell.js"></script>
+<script src="assets/page-stats.js"></script>
+</body>
+</html>
