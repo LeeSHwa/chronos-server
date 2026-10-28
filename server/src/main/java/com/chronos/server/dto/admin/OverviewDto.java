@@ -10,7 +10,7 @@ import java.util.List;
  * 기존 필드(dauToday / runsStartedToday / runsClearedToday / dauSeries / recentUsers)는
  * 프론트가 이미 쓰고 있으므로 그대로 두고, 전시용 지표만 덧붙였다.
  *
- * ⚠️ userId는 '사람'이 아니라 설치(기기) 식별자다(client-log-spec 4장).
+ * ⚠️ userId는 '사람'이 아니라 설치(기기) 식별자다(로그 명세 v0.6 1.2).
  *    관람객 수를 세는 정확한 기준은 dauToday가 아니라 playsToday(= DISTINCT run_id).
  */
 public record OverviewDto(

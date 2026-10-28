@@ -55,7 +55,7 @@
    * 난이도 코드 → 표시 이름.
    *
    * 서버는 upper()로 합쳐서 주고(클라 "LIMITED", 더미 "Limited"), 원본 이벤트는 대소문자가 섞여 있다.
-   * 표기는 docs/event-catalog.md 의 Standard / Endless / Limited / Timeless 를 따른다.
+   * 표기는 로그 명세 v0.6 1.2의 Standard / Endless / Limited / Timeless 를 따른다.
    * 공식 한글 명칭이 없으므로 번역하지 않는다.
    */
   function difficulty(code) {
