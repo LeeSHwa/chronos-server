@@ -1,73 +1,146 @@
-### 1. 최소 요청 — RUN_START 한 건
+### 로그 수집 API 요청 예시 (클라이언트 로그 명세 v0.6)
+### userId·runId는 실제 클라처럼 부호 있는 64비트 값이다.
+
+
+### 1. 게임 실행 — runId/floor/round 없는 이벤트 (해당 컬럼이 NULL로 저장되는지)
 POST http://localhost:8080/api/v1/logs
 Content-Type: application/json
 
 [
   {
-    "userId": -6601403713907716966,
-    "eventType": "RUN_START",
-    "timestamp": "2026-08-05T13:24:05.123Z",
-    "difficulty": "Limited",
-    "runId": -8553994346255530530,
-    "floor": 1,
-    "round": 1,
-    "payload": { "characterClass": "WARRIOR" }
+    "userId": 2208189609186332156,
+    "eventType": "ACCOUNT_LOGIN",
+    "timestamp": "2026-10-25T12:39:50.957Z",
+    "difficulty": "Standard",
+    "payload": { "platform": "PC", "clientVersion": "1.0", "region": "KR" }
   }
 ]
 
 
-### 2. runId/floor/round 없는 이벤트 (nullable 컬럼 확인)
+### 2. 판 시작 — 클라는 이렇게 여러 건을 배열로 묶어 보낸다 (최대 20건)
 POST http://localhost:8080/api/v1/logs
 Content-Type: application/json
 
 [
   {
-    "userId": -6601403713907716966,
-    "eventType": "ACCOUNT_LOGIN",
-    "timestamp": "2026-08-05T13:20:00.000Z",
-    "difficulty": "Standard",
+    "userId": 2208189609186332156,
+    "eventType": "RUN_START",
+    "timestamp": "2026-10-25T12:17:13.217Z",
+    "difficulty": "Limited",
+    "runId": -1122512345824004122,
+    "payload": { "attackType": "SPECIAL_SHOT", "clientVersion": "1.0" }
+  },
+  {
+    "userId": 2208189609186332156,
+    "eventType": "FLOOR_ENTER",
+    "timestamp": "2026-10-25T12:17:13.218Z",
+    "difficulty": "Limited",
+    "runId": -1122512345824004122,
+    "floor": 1,
+    "round": "1",
+    "payload": { "fieldCount": 4, "hasBoss": true }
+  },
+  {
+    "userId": 2208189609186332156,
+    "eventType": "ROUND_ENTER",
+    "timestamp": "2026-10-25T12:17:13.220Z",
+    "difficulty": "Limited",
+    "runId": -1122512345824004122,
+    "floor": 1,
+    "round": "1",
     "payload": {
-      "platform": "PC",
-      "clientVersion": "1.2.3",
-      "region": "KR"
+      "mapId": "F1_3",
+      "elapsedMs": 0,
+      "overclockDeciseconds": 0,
+      "currency": { "basic": 0, "timeStop": 0 }
     }
   }
 ]
 
 
-### 3. 배열로 여러 건 (클라가 실제로 보내는 배치 형태)
+### 3. 스테이지 클리어 — 상점을 나와 Save될 때 나간다. 값은 클리어한 순간의 것
 POST http://localhost:8080/api/v1/logs
 Content-Type: application/json
 
 [
   {
-    "userId": -6601403713907716966,
-    "eventType": "FLOOR_ENTER",
-    "timestamp": "2026-08-05T13:24:06.000Z",
+    "userId": 2208189609186332156,
+    "eventType": "ROUND_CLEAR",
+    "timestamp": "2026-10-25T12:18:09.000Z",
     "difficulty": "Limited",
-    "runId": -8553994346255530530,
+    "runId": -1122512345824004122,
     "floor": 1,
-    "round": 1,
-    "payload": {}
+    "round": "1",
+    "payload": {
+      "clearElapsedMs": 40920,
+      "clearOverclockDeciseconds": 878,
+      "clearCurrency": { "basic": 5, "timeStop": 2 },
+      "build": {
+        "weapons": [],
+        "runes": [],
+        "augments": [ { "augmentId": 8, "stacks": 1 } ]
+      }
+    }
   },
   {
-    "userId": -6601403713907716966,
+    "userId": 2208189609186332156,
+    "eventType": "ROUND_ENTER",
+    "timestamp": "2026-10-25T12:18:58.309Z",
+    "difficulty": "Limited",
+    "runId": -1122512345824004122,
+    "floor": 1,
+    "round": "2",
+    "payload": {
+      "mapId": "F1_4",
+      "elapsedMs": 43659,
+      "overclockDeciseconds": 898,
+      "currency": { "basic": 1, "timeStop": 2 }
+    }
+  }
+]
+
+
+### 4. 사망 — PLAYER_DEATH 바로 뒤에 RUN_END(DEATH). killerId는 문자열
+POST http://localhost:8080/api/v1/logs
+Content-Type: application/json
+
+[
+  {
+    "userId": 2208189609186332156,
     "eventType": "PLAYER_DEATH",
-    "timestamp": "2026-08-05T13:28:47.500Z",
+    "timestamp": "2026-10-25T12:58:01.047Z",
     "difficulty": "Limited",
-    "runId": -8553994346255530530,
-    "floor": 2,
-    "round": 3,
-    "payload": { "survivalTimeMs": 282377, "killerId": null }
+    "runId": -1122512345824004122,
+    "floor": 1,
+    "round": "2",
+    "payload": {
+      "deathCause": "HAZARD",
+      "killerId": "RESIDUAL_BEAM",
+      "elapsedMs": 18679,
+      "build": {
+        "weapons": [],
+        "runes": [],
+        "augments": [ { "augmentId": 10, "stacks": 1 }, { "augmentId": 5, "stacks": 1 } ]
+      }
+    }
   },
   {
-    "userId": -6601403713907716966,
+    "userId": 2208189609186332156,
     "eventType": "RUN_END",
-    "timestamp": "2026-08-05T13:28:47.600Z",
+    "timestamp": "2026-10-25T12:58:01.048Z",
     "difficulty": "Limited",
-    "runId": -8553994346255530530,
-    "floor": 2,
-    "round": 3,
-    "payload": { "totalTimeMs": 282377, "result": "LOSE" }
+    "runId": -1122512345824004122,
+    "floor": 1,
+    "round": "2",
+    "payload": {
+      "result": "DEATH",
+      "elapsedMs": 18679,
+      "overclockDeciseconds": 0,
+      "build": {
+        "weapons": [],
+        "runes": [],
+        "augments": [ { "augmentId": 10, "stacks": 1 }, { "augmentId": 5, "stacks": 1 } ]
+      }
+    }
   }
 ]
