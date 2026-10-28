@@ -2,7 +2,8 @@
  * Chronos Admin — API 호출
  *
  * 백엔드 엔드포인트는 전부 여기를 거친다. 페이지 스크립트는 fetch를 직접 부르지 않는다.
- * 명세: docs/admin-spec.md
+ * 응답 모양은 server/.../dto/admin/*Dto.java 가 기준이다.
+ * (docs/archive/admin-spec.md 는 5월 H2 시절 v1이라 현재 응답과 다르다.)
  *
  * (구 app.js에 있던 USE_MOCK / MOCK_* 더미 데이터는 걷어냈다. 백엔드가 실제로 붙은 뒤로
  *  한 번도 켜지지 않았고, 스키마가 timestamp → clientTime/serverTime 으로 바뀌면서
