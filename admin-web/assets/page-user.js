@@ -105,9 +105,9 @@
   };
 
   const DEATH_CAUSE = {
+    MONSTER: '피격',
+    HAZARD:  '장판',
     DRAIN:   'OC 소진',
-    COMBAT:  '피격',
-    REFLECT: '보스 반사',
   };
 
   const RUN_RESULT = {
@@ -127,7 +127,13 @@
     return parts.length ? parts.join(' · ') : '빈 빌드';
   }
 
-  /** payload → 한 줄 요약 (로그 명세 v0.5의 key 기준) */
+  /** 재화 객체 → "재화 평타 14 · 정지 6". 없으면 null(요약에서 빠진다). */
+  function currencySummary(c) {
+    if (!c) return null;
+    return `재화 평타 ${c.basic ?? 0} · 정지 ${c.timeStop ?? 0}`;
+  }
+
+  /** payload → 한 줄 요약 (로그 명세 v0.6의 key 기준) */
   function summarize(type, p) {
     if (!p) return '—';
     const join = (...parts) => parts.filter(Boolean).join(' · ');
@@ -141,11 +147,12 @@
                                         `OC ${F.oc(p.overclockDeciseconds)}`, buildSummary(p.build));
       case 'FLOOR_ENTER':   return join(p.fieldCount != null && `필드 ${p.fieldCount}`,
                                         p.hasBoss != null && (p.hasBoss ? '보스 있음' : '보스 없음'));
-      case 'ROUND_ENTER':   return join(p.mapId, `OC ${F.oc(p.overclockDeciseconds)}`);
+      case 'ROUND_ENTER':   return join(p.mapId, `OC ${F.oc(p.overclockDeciseconds)}`, currencySummary(p.currency));
       case 'ROUND_CLEAR':   return join(`클리어 OC ${F.oc(p.clearOverclockDeciseconds)}`,
-                                        `플레이 ${F.ms(p.clearElapsedMs)}`, buildSummary(p.build));
+                                        `플레이 ${F.ms(p.clearElapsedMs)}`, currencySummary(p.clearCurrency),
+                                        buildSummary(p.build));
       case 'PLAYER_DEATH':  return join(DEATH_CAUSE[p.deathCause] ?? p.deathCause,
-                                        p.killerId != null && C.enemy(p.killerId), F.ms(p.elapsedMs));
+                                        p.killerId != null && C.killer(p.deathCause, p.killerId), F.ms(p.elapsedMs));
       case 'CLIENT_ERROR':  return join(p.errorCode, p.message);
       default:              return JSON.stringify(p).slice(0, 80);
     }

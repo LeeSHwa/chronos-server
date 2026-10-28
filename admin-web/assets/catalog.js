@@ -1,7 +1,7 @@
 /**
  * Chronos Admin — 게임 데이터 이름표
  *
- * 로그에는 숫자 id만 들어온다(`templateId: 11001`, `killerId: 2100`).
+ * 로그에는 id만 들어온다(`templateId: 11001`, `killerId: "2100"`).
  * 숫자를 사람이 읽는 이름으로 바꾸는 표를 여기 모아둔다.
  *
  * 서버·DB는 건드리지 않는다. 이름은 기획이 바꾸면 따라 바뀌는 값이고, 로그는 숫자를
@@ -46,8 +46,9 @@
   };
 
   /**
-   * 적. killerId에 들어온다.
+   * 적. deathCause가 MONSTER일 때 killerId에 들어온다.
    * 표시용 한글 이름이 아직 없어서 클라 내부 이름을 그대로 쓴다.
+   * v0.6부터 killerId는 문자열("2001")이지만 객체 키는 문자열이라 그대로 찾아진다.
    */
   const ENEMIES = {
     2001: 'F1_A1',
@@ -60,6 +61,11 @@
     3010: 'F2_N',
     9001: 'TestMob',
     10001: 'TranningDummy',
+  };
+
+  /** 장판. deathCause가 HAZARD일 때 killerId에 들어온다. 이름이 아직 없어 id를 그대로 쓴다. */
+  const HAZARDS = {
+    RESIDUAL_BEAM: 'RESIDUAL_BEAM',
   };
 
   /**
@@ -93,9 +99,12 @@
     rune:       id => lookup(RUNES, id, '룬'),
     consumable: id => lookup(CONSUMABLES, id, '소모품'),
     enemy:      id => lookup(ENEMIES, id, '적'),
+    hazard:     id => lookup(HAZARDS, id, '장판'),
+    /** killerId는 deathCause에 따라 적 id이거나 장판 id다. */
+    killer:     (cause, id) => cause === 'HAZARD' ? lookup(HAZARDS, id, '장판') : lookup(ENEMIES, id, '적'),
     augment:    id => lookup(AUGMENTS, id, '증강'),
     season:     code => SEASONS[code] || code || '—',
     attackType: code => ATTACK_TYPES[code] || code || '—',
-    tables: { WEAPONS, RUNES, CONSUMABLES, ENEMIES, AUGMENTS, SEASONS, ATTACK_TYPES },
+    tables: { WEAPONS, RUNES, CONSUMABLES, ENEMIES, HAZARDS, AUGMENTS, SEASONS, ATTACK_TYPES },
   };
 }());
