@@ -69,6 +69,7 @@ DB 데이터는 `chronos-pgdata` 볼륨에 남습니다. 백업, 초기화, 오�
 | [chronos-client-log-spec-v0.6.html](docs/chronos-client-log-spec-v0.6.html) | 클라이언트 로그 명세. 이벤트와 payload의 기준 |
 | [getting-started.md](docs/getting-started.md) | 실행, 백업, 오프라인 실행, 문제 해결 |
 | [architecture.md](docs/architecture.md) | 컨테이너 · 포트 · 비밀번호 전달 구조 |
+| [loadtest/](loadtest/README.md) | 로그 수집 API 부하 테스트 (k6) 절차와 결과 |
 | [archive/](docs/archive/) | 지난 명세와 전시(2026-08) 기록 |
 
 ## 남은 과제
