@@ -19,19 +19,21 @@ import java.util.TreeMap;
 
 /**
  * 부팅 시 게임 클라이언트 로그를 시뮬레이션해 적재.
- * 명세: 클라이언트 로그 명세 v0.5
+ * 명세: 클라이언트 로그 명세 v0.6
  *
  * <b>이 생성기는 명세에 적힌 이벤트·payload·발행 순서만 만든다.</b> 명세에 없는 이벤트
- * (BOSS_KILL, FLOOR_CLEAR)나 구 payload key(clearTimeMs, survivalTimeMs, deathsInFloor,
- * characterClass, roundKillCount, rewardEventCount)는 만들지 않는다. 클라이언트가 아직 이 명세대로
- * 보내지 못하는 동안, 어드민 쿼리를 "앞으로 들어올 모양"으로 검증하는 것이 이 생성기의 목적이다.
+ * (BOSS_KILL, FLOOR_CLEAR)나 구 payload key(clearTimeMs, survivalTimeMs, characterClass,
+ * hazardId 등)는 만들지 않는다. 어드민 쿼리를 "앞으로 들어올 모양"으로 검증하는 것이 목적이다.
  *
  * 한 판의 흐름 (명세 4장):
  *   RUN_START → (첫 진입 리워드) → FLOOR_ENTER → ROUND_ENTER → ROUND_CLEAR
- *             → (리워드·정비) → ROUND_ENTER → … → 보스 ROUND_CLEAR → RUN_END
+ *             → (상점·정비) → ROUND_ENTER → … → 2층 보스 ROUND_CLEAR → RUN_END
  *
- * 지금 층 구성: 1층은 필드 4 + 보스, 2층은 필드 1 + 보스 없음.
- * 2층 마지막 필드를 클리어하고 포탈을 타면 그 판은 WIN으로 끝난다.
+ * 지금 층 구성: 1층은 필드 4 + 보스, 2층은 필드 3 + 보스. 2층 보스를 쓰러뜨리면 WIN.
+ * 상점·정비 필드는 스테이지가 아니므로 로그를 내지 않는다(명세 1.3).
+ *
+ * userId·runId는 실제 클라처럼 부호 있는 64비트 난수다. 1, 2, 3 같은 작은 값으로 두면
+ * JS 정밀도(2^53) 문제처럼 큰 id에서만 터지는 버그를 더미로는 잡을 수 없다.
  *
  * ⚠️ local 프로파일에서만 동작한다.
  *    PostgreSQL은 H2(인메모리)와 달리 데이터가 영구 보존되므로, 게이트가 없으면
@@ -50,14 +52,14 @@ public class DummyLogInitializer implements ApplicationRunner {
     private static final int CLIENT_ERROR_COUNT = 15;
 
     /** 층 구성: {필드 수, 보스 유무}. FLOOR_ENTER의 fieldCount / hasBoss 와 같은 값. */
-    private static final int[] FIELD_COUNT = {4, 1};
-    private static final boolean[] HAS_BOSS = {true, false};
+    private static final int[] FIELD_COUNT = {4, 3};
+    private static final boolean[] HAS_BOSS = {true, true};
     private static final int FLOOR_COUNT = FIELD_COUNT.length;
 
-    /** 스테이지별 클리어 확률. 뒤로 갈수록 떨어진다. 종합 클리어율 ~15%. */
+    /** 스테이지별 클리어 확률. 뒤로 갈수록 떨어진다. 2층 보스까지 깨는 판은 ~7%. */
     private static final double[][] CLEAR_PROB = {
             {0.97, 0.94, 0.90, 0.86, 0.45},  // 1-1 ~ 1-4, 1-B
-            {0.62}                            // 2-1
+            {0.90, 0.85, 0.80, 0.60}         // 2-1 ~ 2-3, 2-B
     };
 
     /** 스테이지를 깬 뒤 포탈 앞에서 판을 접을 확률 (RUN_END QUIT). */
@@ -97,8 +99,9 @@ public class DummyLogInitializer implements ApplicationRunner {
 
     /** 1층 필드 맵. 판마다 순서가 섞인다 — mapId와 round를 나눠 기록하는 이유. */
     private static final String[] FLOOR1_FIELD_MAPS = {"F1_1", "F1_2", "F1_3", "F1_4"};
-    private static final String FLOOR1_BOSS_MAP = "F1_B";
-    private static final String[] FLOOR2_FIELD_MAPS = {"F2_1"};
+    /** 2층 필드 맵. 실제 로그에서는 항상 이 순서로 나온다. */
+    private static final String[] FLOOR2_FIELD_MAPS = {"F2_1", "F2_2", "F2_3"};
+    private static final String[] BOSS_MAPS = {"F1_B", "F2_B"};
 
     /** 무기 templateId. 11001 학살 ~ 11006 태초의 의지. */
     private static final int[] WEAPON_TEMPLATES = {11001, 11002, 11003, 11004, 11005, 11006};
@@ -109,10 +112,16 @@ public class DummyLogInitializer implements ApplicationRunner {
     /** 상태가 남는 증강 id. 전투 갈래(10·11·12)는 공격 타입에서 따로 들어간다. */
     private static final int[] AUGMENT_POOL = {4, 5, 6, 8, 9, 14, 15, 21, 22, 31, 32};
 
-    /** 적 id. killerId에 들어간다. 층마다 나오는 적이 다르다. */
-    private static final int[] ENEMY_FLOOR1 = {2001, 2002, 2003, 2010};
-    private static final int[] ENEMY_FLOOR2 = {3001, 3002, 3010};
-    private static final int ENEMY_BOSS = 2100;
+    /**
+     * 적 id. MONSTER 사망의 killerId에 문자열로 들어간다. 층마다 나오는 적이 다르다.
+     * 3002는 이름(F2_B)으로 보아 2층 보스로 둔다.
+     */
+    private static final String[] ENEMY_FLOOR1 = {"2001", "2002", "2003", "2010"};
+    private static final String[] ENEMY_FLOOR2 = {"3001", "3010"};
+    private static final String[] ENEMY_BOSS = {"2100", "3002"};
+
+    /** 장판 id. HAZARD 사망의 killerId에 들어간다. 지금 로그로 확인된 것은 하나뿐이다. */
+    private static final String[] HAZARDS = {"RESIDUAL_BEAM"};
 
     private static final String[] RUNE_SEASONS = {"SPRING", "SUMMER", "AUTUMN", "WINTER"};
     private static final String[] WEAPON_RANKS = {"C", "B", "A", "S"};
@@ -141,6 +150,20 @@ public class DummyLogInitializer implements ApplicationRunner {
     /** 아무리 잘해도 무한히 쌓이진 않는다. 240초. */
     private static final int OC_CAP = 2400;
 
+    // ─────────────────────────────────────────────
+    // 재화 모델 — 평타(basic) / 시간정지(timeStop)
+    // ─────────────────────────────────────────────
+
+    /**
+     * 스테이지 하나에서 얻는 재화 총량. 적을 어떻게 잡았느냐에 따라 두 재화로 나뉘고,
+     * 그 비율은 판마다 정해지는 플레이 스타일(RunState.timeStopRatio)을 따른다.
+     */
+    private static final int CURRENCY_PER_FIELD = 6;
+    private static final int CURRENCY_PER_BOSS = 12;
+
+    /** 상점에서 증강 하나를 강화하는 값. 재화 종류와 상관없이 같다고 둔다. */
+    private static final int UPGRADE_COST = 4;
+
     private final DummyLogWriter writer;
     private final Random random = new Random(42);  // 부팅마다 동일 데이터
 
@@ -154,12 +177,14 @@ public class DummyLogInitializer implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         List<DummyEvent> events = new ArrayList<>();
 
-        for (long userId = 1; userId <= USER_COUNT; userId++) {
-            simulateUser(userId, events);
+        long[] userIds = new long[USER_COUNT];
+        for (int i = 0; i < USER_COUNT; i++) {
+            userIds[i] = nextId();
+            simulateUser(userIds[i], events);
         }
 
         for (int i = 0; i < CLIENT_ERROR_COUNT; i++) {
-            long userId = 1 + random.nextInt(USER_COUNT);
+            long userId = userIds[random.nextInt(USER_COUNT)];
             events.add(event(clientError(userId, randomSessionStart())));
         }
 
@@ -201,7 +226,7 @@ public class DummyLogInitializer implements ApplicationRunner {
 
             int runCount = 1 + random.nextInt(3);
             for (int i = 0; i < runCount && pending == null; i++) {
-                RunState state = new RunState(userId, nextRunId(), pick(DIFFICULTIES),
+                RunState state = new RunState(userId, nextId(), pick(DIFFICULTIES),
                         pick(CLIENT_VERSIONS), pickAttackType());
                 pending = playRun(state, clock, events, true);
                 clock.advanceSeconds(60 + random.nextInt(600));
@@ -249,7 +274,7 @@ public class DummyLogInitializer implements ApplicationRunner {
                 // ── 사망: OC가 0이 되어 끝난다 ──
                 s.oc = 0;
                 s.takeSnapshot();                      // 죽은 순간의 스펙
-                String cause = deathCause(boss, s.difficulty);
+                String cause = deathCause();
                 events.add(event(playerDeath(s, clock.now(), cause, killerId(s, boss, cause))));
                 clock.advanceMillis(50);
                 events.add(event(runEnd(s, clock.now(), "DEATH")));
@@ -257,12 +282,15 @@ public class DummyLogInitializer implements ApplicationRunner {
             }
 
             // ── 클리어 ──
-            // 이 순간의 시간·OC를 적어두기만 한다. ROUND_CLEAR는 리워드·정비가 끝난
+            // 이 순간의 시간·OC·재화를 적어두기만 한다. ROUND_CLEAR는 상점·정비가 끝난
             // Save 시점에 나가고, 그때 이 스냅샷을 실어 보낸다(명세 3.3).
             s.oc = Math.max(s.oc - drain - combat, 20);
+            s.earnCurrency(boss ? CURRENCY_PER_BOSS : CURRENCY_PER_FIELD);
             s.clearElapsedMs = s.elapsedMs;
             s.clearOc = s.oc;
-            s.takeSnapshot();                          // 리워드·정비 전의 스펙
+            s.clearBasic = s.basic;
+            s.clearTimeStop = s.timeStop;
+            s.takeSnapshot();                          // 상점·정비 전의 스펙
 
             if (s.isLastStageOfRun()) {
                 // 마지막 스테이지는 다음 스테이지가 없으므로 쓰러뜨린 순간 바로 나간다.
@@ -272,8 +300,8 @@ public class DummyLogInitializer implements ApplicationRunner {
                 return null;
             }
 
-            // ── 포탈 → 리워드·정비 → Save(ROUND_CLEAR) → 다음 스테이지 ──
-            // 리워드를 고르기 전에 접거나 끄면 그 스테이지의 ROUND_CLEAR는 나가지 않는다.
+            // ── 포탈 → 상점·정비 필드 → Save(ROUND_CLEAR) → 다음 스테이지 ──
+            // 상점을 나오기 전에 접거나 끄면 그 스테이지의 ROUND_CLEAR는 나가지 않는다.
             if (random.nextDouble() < QUIT_PROB) {
                 clock.advanceSeconds(5 + random.nextInt(30));
                 events.add(event(runEnd(s, clock.now(), "QUIT")));
@@ -283,8 +311,8 @@ public class DummyLogInitializer implements ApplicationRunner {
                 return s;   // 게임을 그냥 껐다. RUN_END 없이 끊긴다.
             }
 
-            clock.advanceSeconds(15 + random.nextInt(45));   // 리워드 고르고 정비하는 시간
-            s.takeReward();
+            clock.advanceSeconds(15 + random.nextInt(45));   // 상점에서 강화하고 정비하는 시간
+            s.shop();
             events.add(event(roundClear(s, clock.now())));   // Save 시점
 
             boolean floorChanged = s.advanceStage();
@@ -296,7 +324,7 @@ public class DummyLogInitializer implements ApplicationRunner {
     }
 
     // ─────────────────────────────────────────────
-    // 이벤트 빌더 — payload key는 명세 v0.5 그대로
+    // 이벤트 빌더 — payload key는 명세 v0.6 그대로
     // ─────────────────────────────────────────────
 
     private ClientLogRequest accountLogin(long userId, OffsetDateTime ts) {
@@ -353,13 +381,14 @@ public class DummyLogInitializer implements ApplicationRunner {
         e.setPayload(payload(
                 "mapId", s.currentMapId(),
                 "elapsedMs", s.elapsedMs,
-                "overclockDeciseconds", s.oc
+                "overclockDeciseconds", s.oc,
+                "currency", currency(s.basic, s.timeStop)   // 상점에서 쓰고 남은 값
         ));
         return e;
     }
 
     /**
-     * 클리어 순간의 시간·OC는 그때 찍어둔 스냅샷을 쓴다. 이 이벤트 자체는 리워드·정비가
+     * 클리어 순간의 시간·OC·재화는 그때 찍어둔 값을 쓴다. 이 이벤트 자체는 상점·정비가
      * 끝난 Save 시점에 나가므로, 현재 시각과 payload의 시간이 서로 다른 유일한 이벤트다.
      */
     private ClientLogRequest roundClear(RunState s, OffsetDateTime ts) {
@@ -367,19 +396,23 @@ public class DummyLogInitializer implements ApplicationRunner {
         e.setPayload(payload(
                 "clearElapsedMs", s.clearElapsedMs,
                 "clearOverclockDeciseconds", s.clearOc,
+                "clearCurrency", currency(s.clearBasic, s.clearTimeStop),
                 "build", s.snapshot
         ));
         return e;
     }
 
+    /** 재화 객체. 0이어도 key를 생략하지 않는다(명세 1.9). */
+    private static Map<String, Object> currency(int basic, int timeStop) {
+        return payload("basic", basic, "timeStop", timeStop);
+    }
+
     /** killerId는 가해자가 있을 때만. 시간 소진(DRAIN)으로 죽으면 키 자체를 넣지 않는다. */
-    private ClientLogRequest playerDeath(RunState s, OffsetDateTime ts, String cause, Integer killerId) {
+    private ClientLogRequest playerDeath(RunState s, OffsetDateTime ts, String cause, String killerId) {
         ClientLogRequest e = stageBase(s, "PLAYER_DEATH", ts);
-        Map<String, Object> p = payload(
-                "deathCause", cause,
-                "elapsedMs", s.elapsedMs
-        );
+        Map<String, Object> p = payload("deathCause", cause);
         if (killerId != null) p.put("killerId", killerId);
+        p.put("elapsedMs", s.elapsedMs);
         p.put("build", s.snapshot);
         e.setPayload(p);
         return e;
@@ -442,17 +475,24 @@ public class DummyLogInitializer implements ApplicationRunner {
         int stageIndex = 0;    // 그 층에서 몇 번째 스테이지인가. 필드 다음이 보스
         long elapsedMs = 0;
         int oc = INITIAL_OC;
+        int basic = 0;             // 평타 재화 잔량
+        int timeStop = 0;          // 시간정지 재화 잔량
         long clearElapsedMs = 0;   // 직전에 깬 스테이지의 클리어 순간 값
         int clearOc = INITIAL_OC;
+        int clearBasic = 0;
+        int clearTimeStop = 0;
+
+        /** 처치 중 시간정지로 잡는 비율. 판마다 정해지는 플레이 스타일이다(0.2~0.7). */
+        final double timeStopRatio = 0.2 + random.nextDouble() * 0.5;
 
         /**
          * 전투가 끝난 순간에 찍어 얼려 두는 빌드 사본(명세 3.5).
-         * 리워드·정비로는 갱신하지 않으므로, 로그에는 "그 스펙으로 어디까지 해냈는가"가 남는다.
+         * 상점·정비로는 갱신하지 않으므로, 로그에는 "그 스펙으로 어디까지 해냈는가"가 남는다.
          */
         Map<String, Object> snapshot = Map.of("weapons", List.of(), "runes", List.of(), "augments", List.of());
         int rewardCount = 0;   // 빌드가 자라는 속도를 정하는 내부 값 (로그에는 나가지 않는다)
 
-        // 빌드: 리워드를 받을 때마다 자란다
+        // 빌드: 첫 진입 리워드와 상점에서 자란다
         final Map<Integer, int[]> weapons = new TreeMap<>();    // slot → {templateId, rankIndex}
         final Map<Integer, int[]> runes = new TreeMap<>();      // slot → {templateId, seasonIndex, fusionStack}
         final Map<Integer, Integer> augments = new TreeMap<>(); // augmentId → stacks
@@ -485,8 +525,26 @@ public class DummyLogInitializer implements ApplicationRunner {
         }
 
         String currentMapId() {
-            if (isBossStage()) return FLOOR1_BOSS_MAP;
+            if (isBossStage()) return BOSS_MAPS[floorIndex];
             return floorIndex == 0 ? floor1Maps.get(stageIndex) : FLOOR2_FIELD_MAPS[stageIndex];
+        }
+
+        /** 스테이지 하나에서 얻은 재화를 플레이 스타일 비율대로 두 재화에 나눠 쌓는다. */
+        void earnCurrency(int base) {
+            int total = base + random.nextInt(base / 2 + 1);
+            int ts = (int) Math.round(total * timeStopRatio);
+            timeStop += ts;
+            basic += total - ts;
+        }
+
+        /**
+         * 상점 한 번. 가진 재화로 몇 번 강화하고, 빌드가 한 단계 자란다.
+         * 다 쓰지 않고 남겨 두기도 한다 — 그래야 ROUND_ENTER의 잔량이 0에 붙지 않는다.
+         */
+        void shop() {
+            basic -= UPGRADE_COST * random.nextInt(basic / UPGRADE_COST + 1);
+            timeStop -= UPGRADE_COST * random.nextInt(timeStop / UPGRADE_COST + 1);
+            takeReward();
         }
 
         /** 다음 스테이지로. 층이 바뀌면 true를 돌려준다(FLOOR_ENTER 발행 조건). */
@@ -498,7 +556,7 @@ public class DummyLogInitializer implements ApplicationRunner {
             return true;
         }
 
-        /** 리워드 한 번. 무기·룬·증강 중 하나가 늘거나 좋아진다. */
+        /** 빌드가 한 단계 자란다. 무기·룬·증강 중 하나가 늘거나 좋아진다. */
         void takeReward() {
             rewardCount++;
             double roll = random.nextDouble();
@@ -579,22 +637,22 @@ public class DummyLogInitializer implements ApplicationRunner {
         return map;
     }
 
-    /**
-     * 사망 원인.
-     *
-     * REFLECT(보스 돌진 반사)는 Timeless 난이도의 보스 스테이지에서만 성립한다.
-     */
-    private String deathCause(boolean boss, String difficulty) {
+    /** 사망 원인. MONSTER(적, 보스 포함) / HAZARD(장판) / DRAIN(시간 소진). */
+    private String deathCause() {
         double roll = random.nextDouble();
-        if (boss && "Timeless".equals(difficulty) && roll < 0.18) return "REFLECT";
-        return roll < 0.60 ? "COMBAT" : "DRAIN";
+        if (roll < 0.55) return "MONSTER";
+        if (roll < 0.70) return "HAZARD";
+        return "DRAIN";
     }
 
-    /** 가해자. 시간 소진으로 죽으면 없다. */
-    private Integer killerId(RunState s, boolean boss, String cause) {
-        if ("DRAIN".equals(cause)) return null;
-        if (boss) return ENEMY_BOSS;
-        return s.floorIndex == 0 ? pick(ENEMY_FLOOR1) : pick(ENEMY_FLOOR2);
+    /** 가해자 id(문자열). MONSTER면 적, HAZARD면 장판, DRAIN이면 없다. */
+    private String killerId(RunState s, boolean boss, String cause) {
+        return switch (cause) {
+            case "HAZARD" -> pick(HAZARDS);
+            case "MONSTER" -> boss ? ENEMY_BOSS[s.floorIndex]
+                    : s.floorIndex == 0 ? pick(ENEMY_FLOOR1) : pick(ENEMY_FLOOR2);
+            default -> null;
+        };
     }
 
     private String pickAttackType() {
@@ -607,9 +665,16 @@ public class DummyLogInitializer implements ApplicationRunner {
         return ATTACK_TYPES[0];
     }
 
-    /** 클라 SeedManager 와 같이 32bit int 범위의 시드를 runId로 쓴다. */
-    private long nextRunId() {
-        return random.nextInt();
+    /**
+     * userId·runId. 실제 로그처럼 부호 있는 64비트 난수다(예: 2208189609186332156, -1122513277784744535).
+     * 0은 클라에서 "시드 없음"이라 쓰지 않는다.
+     */
+    private long nextId() {
+        long id;
+        do {
+            id = random.nextLong();
+        } while (id == 0);
+        return id;
     }
 
     private OffsetDateTime randomSessionStart() {
